@@ -51,6 +51,7 @@ Drawing quirks kept as drawn:
  - The caption on the original reads top to bottom; common.caption() rotates
    it bottom to top.
 """
+import common
 from common import IC, Stock, P, X, Y, LS138, PITCH, sheet, caption, save
 
 # False = the printed (reversed) discrete-LED orientation. See docstring.
@@ -205,12 +206,24 @@ def build():
     s.junction((gx, g2b[1]))
     gnd((gx, gy))
     y0 = u2.pin('15')
-    jx = X(318)
+    # System mode: the jog moves one pitch left to leave room for the /PPI_CS label.
+    jx = X(318) - (PITCH if common.SYSTEM else 0)
     s.wire(y0, (jx, y0[1]), (jx, cs[1]), cs)          # Y0 -> 8255 CS
+    # System mode (build_system.py): this 138 is THE I/O decoder, so its chip
+    # selects get names the other sheets join on: Y0 = /PPI_CS (wire kept),
+    # Y4 = /PIT_CS and Y5 = /PIC_CS (labels instead of the printed stubs).
+    chip_selects = {}
+    if common.SYSTEM:
+        s.glabel('/PPI_CS', (jx, y0[1]), side='R', shape='output')
+        chip_selects = {'11': '/PIT_CS', '10': '/PIC_CS'}
     for n in ['14', '13', '12', '11', '10', '9', '7']:  # Y1-Y7: stubs as drawn
         p = u2.pin(n)
-        s.wire(p, (p[0] + PITCH, p[1]))
-        s.noconnect((p[0] + PITCH, p[1]))
+        end = (p[0] + PITCH, p[1])
+        s.wire(p, end)
+        if n in chip_selects:
+            s.glabel(chip_selects[n], end, side='R', shape='output')
+        else:
+            s.noconnect(end)
 
     # ------------------------------------------------- LED bar D1 + resistors
     d1x = X(834.6)

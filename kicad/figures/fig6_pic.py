@@ -22,6 +22,7 @@ Drawing quirks kept as drawn:
  - CAS0-CAS2 drawn as stubs (no-connect flags at their ends here); the
    74LS138's Y1-Y3, Y6, Y7 likewise.
 """
+import common
 from common import IC, Stock, P, X, Y, LS138, PITCH, sheet, caption, save
 
 # 8259A as drawn: IR0-IR7, A0 and the bus controls on the left; data, CAS,
@@ -48,7 +49,9 @@ def stub(s, pin_pt, x):
 def build():
     s = sheet(6, 'Interrupt Subsystem - PIC')
     pic = s.ic('U1', I8259, *P(666, 170), hide_ref=True, val_at=P(664, 436))
-    dec = s.ic('U2', LS138, *P(385, 417), hide_ref=True, val_at=P(397, 572))
+    # SYSTEM: Fig 4's 74LS138 is the one I/O decoder; this sheet's copy (as
+    # printed, a duplicate of it) is dropped and CS comes in as /PIC_CS.
+    dec = None if common.SYSTEM else         s.ic('U2', LS138, *P(385, 417), hide_ref=True, val_at=P(397, 572))
 
     # IR0-IR6 tied together and grounded (dots on IR1-IR5, as drawn).
     bx = X(611)
@@ -68,9 +71,14 @@ def build():
         p = pic.pin(n)
         s.glabel(txt, (lx, p[1]), side='L')
         s.wire((lx, p[1]), p)
-    # CS from the 74LS138's Y5 (pin 10), up the left of the 8259.
-    cs, y5 = pic.pin('1'), dec.pin('10')
-    s.wire(cs, (X(625), cs[1]), (X(625), y5[1]), y5)
+    cs = pic.pin('1')
+    if common.SYSTEM:
+        s.wire(cs, (lx, cs[1]))
+        s.glabel('/PIC_CS', (lx, cs[1]), side='L')
+    else:
+        # CS from the 74LS138's Y5 (pin 10), up the left of the 8259.
+        y5 = dec.pin('10')
+        s.wire(cs, (X(625), cs[1]), (X(625), y5[1]), y5)
 
     rx = X(947)
     for i in range(8):
@@ -84,24 +92,25 @@ def build():
         s.wire(p, (rx, p[1]))
         s.glabel(txt, (rx, p[1]), side='R')
 
-    # 74LS138: A4-A6 select, IO/M enables, G2A/G2B grounded.
-    dx = X(313)
-    for txt, n in [('A4', '1'), ('A5', '2'), ('A6', '3'), ('IO/M', '6')]:
-        p = dec.pin(n)
-        s.glabel(txt, (dx, p[1]), side='L')
-        s.wire((dx, p[1]), p)
-    g2a, g2b = dec.pin('4'), dec.pin('5')
-    gx = X(273)
-    s.wire(g2a, (gx, g2a[1]), (gx, Y(535)))
-    s.wire(g2b, (gx, g2b[1]))
-    s.junction((gx, g2b[1]))
-    s.power(GND, (gx, Y(535)))
-    for txt, n in [('8255 #6: CS', '15'), ('8253 #21: CS', '11')]:
-        p = dec.pin(n)
-        s.wire(p, (X(527), p[1]))
-        s.glabel(txt, (X(527), p[1]), side='R')
-    for n in ['14', '13', '12', '9', '7']:
-        stub(s, dec.pin(n), X(512))
+    if not common.SYSTEM:
+        # 74LS138: A4-A6 select, IO/M enables, G2A/G2B grounded.
+        dx = X(313)
+        for txt, n in [('A4', '1'), ('A5', '2'), ('A6', '3'), ('IO/M', '6')]:
+            p = dec.pin(n)
+            s.glabel(txt, (dx, p[1]), side='L')
+            s.wire((dx, p[1]), p)
+        g2a, g2b = dec.pin('4'), dec.pin('5')
+        gx = X(273)
+        s.wire(g2a, (gx, g2a[1]), (gx, Y(535)))
+        s.wire(g2b, (gx, g2b[1]))
+        s.junction((gx, g2b[1]))
+        s.power(GND, (gx, Y(535)))
+        for txt, n in [('8255 #6: CS', '15'), ('8253 #21: CS', '11')]:
+            p = dec.pin(n)
+            s.wire(p, (X(527), p[1]))
+            s.glabel(txt, (X(527), p[1]), side='R')
+        for n in ['14', '13', '12', '9', '7']:
+            stub(s, dec.pin(n), X(512))
 
     s.text('Corrected from the 2007 printout: the IR7 label read "8255 Pin17: CLK2"; '
            'it is the 8253\'s OUT2 (pin 17),\nas on Fig 5 and in skeet.asm (counter 2 = '

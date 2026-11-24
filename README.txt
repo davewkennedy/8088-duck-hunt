@@ -10,7 +10,8 @@ hand. Written for NASM 0.99.04, flat binary, burned to EEPROM.
   skeet.asm     the complete program (one file)
   schematics/   the six original schematics (PSpice, December 2007),
                 scanned from the printed report and cleaned up
-  kicad/        the six schematics redrawn in KiCad (2026), with the
+  kicad/        the six schematics redrawn in KiCad (2026), plus one system
+                schematic that ties them together, with the
                 corrections listed in kicad/README.txt
   scans/        the raw scans: source/ (the 17-page source printout) and
                 schematics/ (the six figures, before cleanup)

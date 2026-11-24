@@ -50,6 +50,7 @@ Quirks kept as drawn:
 
 The scan is rotated about 1.4 degrees; D() undoes that before P().
 """
+import common
 from common import IC, Stock, P, sheet, caption, save, PITCH
 
 K = 0.024   # scan rotation: horizontals rise 0.024 px per px to the right
@@ -236,13 +237,26 @@ def build():
     # Open stubs as drawn: RQ/GT1, BHE.
     for n, x in [('30', 533), ('34', 761)]:
         p = u1.pin(n)
-        s.wire(p, (DX(x, 600), p[1]))
+        end = s.wire(p, (DX(x, 600), p[1]))
+        if common.SYSTEM:
+            s.noconnect(end)              # system: deliberately unused (HLDA, SS0)
     # Correction 4: QS1 = ~{INTA} in minimum mode, to the 8259. The label sits
     # at the old stub's end: further right, this row is U6 A7's VCC row.
     qs1 = u1.pin('24')
     xinta = DX(761, 600)
     s.wire(qs1, (xinta, qs1[1]))
     s.glabel('8259 Pin 26: INTA', (xinta, qs1[1]), side='R')
+
+    if common.SYSTEM:
+        # System schematic only (see ../README.txt): the printout leaves the bus
+        # outputs as bare stubs; here they carry the system's signal names.
+        for i in range(8):
+            s.glabel(f'A{i}', u4.pin(QN[i]), side='B', shape='output')        # U4 Q0-Q7
+            s.glabel(f'A{12 + i}', u5.pin(QN[i]), side='T', shape='output')   # U5 Q0-Q7
+            s.glabel(f'D{i}', u3.pin(str(18 - i)), side='L', shape='bidirectional')  # U3 B0-B7
+        for i, name in enumerate(['A8', 'A9', 'A10', 'A11', 'IO/M', '/WR', '/RD']):
+            s.glabel(name, u6.pin(str(18 - i)), side='R', shape='output')     # U6 B0-B6
+        s.noconnect(u6.pin('11'))                                             # U6 B7 (A7 = VCC)
 
     # Min-mode names written beside the max-mode pins, as on the printout.
     for text, (x, y) in [('~{DEN}', (742, 524)), ('DT/~{R}', (742, 538)),

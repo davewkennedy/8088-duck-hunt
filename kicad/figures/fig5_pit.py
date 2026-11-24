@@ -32,6 +32,7 @@ Drawing quirks kept as drawn:
  - Unused pins with stubs on the original (74LS138 Y1-Y3, Y5-Y7; 75452 2B, 2A,
    2Y) get the stub and a no-connect flag at its end.
 """
+import common
 from common import IC, Stock, P, X, Y, LS138, PITCH, sheet, caption, save
 from kgen import Placed, g
 
@@ -76,7 +77,9 @@ def build():
     pit = s.ic('U1', I8253, *P(683, 258), hide_ref=True, val_at=P(683, 482))
     # Line the 138 up so its Y4 (pin 11) meets the 8253's CS (pin 21) straight.
     cs = pit.pin('21')
-    dec = s.ic('U2', LS138, X(307), cs[1] - (1 + 4) * PITCH, hide_ref=True, val_at=P(307, 526))
+    # SYSTEM: Fig 4's 74LS138 is the one I/O decoder; this sheet's copy (as
+    # printed, a duplicate of it) is dropped and CS comes in as /PIT_CS.
+    dec = None if common.SYSTEM else         s.ic('U2', LS138, X(307), cs[1] - (1 + 4) * PITCH, hide_ref=True, val_at=P(307, 526))
     drv = s.ic('U3', SN75452, *P(725, 568), hide_ref=True, val_at=P(757, 676))
 
     lx = X(170)   # tip of the left-hand off-page connectors
@@ -106,6 +109,18 @@ def build():
     s.wire((px, c1[1]), c1)
     s.junction((px, c0[1]), (px, c1[1]))
 
+    if common.SYSTEM:
+        s.wire(cs, (X(460), cs[1]))
+        s.glabel('/PIT_CS', (X(460), cs[1]), side='L')
+    else:
+        decoder(s, dec, cs, lx)
+
+    # 8253 outputs and data bus, the speaker driver, notes; saves the sheet.
+    return outputs(s, pit, drv)
+
+
+def decoder(s, dec, cs, lx):
+    """The printed 74LS138 (standalone figure only)."""
     # 74LS138: A4-A6 select, IO/M enables, G2A/G2B grounded.
     for txt, n in [('A4', '1'), ('A5', '2'), ('A6', '3'), ('IO/M', '6')]:
         p = dec.pin(n)
@@ -124,7 +139,8 @@ def build():
     for n in ['14', '13', '12', '10', '9', '7']:
         stub(s, dec.pin(n), X(432))
 
-    # 8253 outputs and data bus.
+
+def outputs(s, pit, drv):
     out0 = pit.pin('10')
     one_b = drv.pin('2')
     s.wire(out0, (X(1043), out0[1]), (X(1043), one_b[1]), one_b)

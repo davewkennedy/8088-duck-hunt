@@ -196,7 +196,7 @@ class Placed:
         dx, dy = rot(px, py, self.angle, self.mirror)
         return (g(self.x + dx), g(self.y + dy))
 
-    def sexpr(self, libname, root_uuid, project):
+    def sexpr(self, libname, inst_path, project):
         lib_id = f'{libname}:{self.sym.name}' if isinstance(self.sym, IC) else \
             f'{self.sym.libname}:{self.sym.name}'
         mirror = f' (mirror {self.mirror})' if self.mirror else ''
@@ -217,7 +217,7 @@ class Placed:
             out.append(f' (property {q(k)} {q(v)} (at {self.x} {self.y} 0) {FONT_HIDE})')
         for n in self.sym.nums():
             out.append(f' (pin {q(n)} (uuid {q(U())}))')
-        out.append(f' (instances (project {q(project)} (path {q("/" + root_uuid)} '
+        out.append(f' (instances (project {q(project)} (path {q(inst_path)} '
                    f'(reference {q(self.ref)}) (unit 1)))))')
         return '\n'.join(out)
 
@@ -227,12 +227,20 @@ class Placed:
 # --------------------------------------------------------------------------
 class Sheet:
     def __init__(self, title, project, libname='skeet8088', date='Sunday, December 09, 2007',
-                 comments=None, paper='A'):
+                 comments=None, paper='A', inst_path=None, netmap=None, pwr_base=0,
+                 ref_offset=0):
+        """inst_path: for a child sheet in a hierarchy, "/<root uuid>/<sheet
+        block uuid>"; None for a standalone/root sheet. netmap: global label
+        text -> net name (the system schematic renames the printed off-page
+        labels to real signal names). pwr_base: offset for #PWR refs so they
+        stay unique across the sheets of a hierarchy."""
         self.title, self.project, self.libname = title, project, libname
+        self.inst_path, self.netmap = inst_path, netmap or {}
+        self.ref_offset = ref_offset     # U1 -> U101 on sheet 1 of a system
         self.date, self.comments, self.paper = date, comments or [], paper
         self.items, self.parts, self.uuid = [], [], U()
         self.syms = {}
-        self.npower = 0
+        self.npower = pwr_base
 
     def _sym(self, sym):
         key = sym.name if isinstance(sym, IC) else f'{sym.libname}:{sym.name}'
@@ -240,6 +248,10 @@ class Sheet:
 
     def ic(self, ref, sym, x, y, **kw):
         self._sym(sym)
+        if self.ref_offset:
+            pre = ref.rstrip('0123456789')
+            if pre != ref:
+                ref = pre + str(self.ref_offset + int(ref[len(pre):]))
         p = Placed(self, ref, sym, x, y, **kw)
         self.parts.append(p)
         return p
@@ -250,7 +262,7 @@ class Sheet:
         self.npower += 1
         (px, py), _ = sym.pin_geom(sym.nums()[0])
         dx, dy = rot(px, py, angle)
-        p = Placed(self, f'#PWR0{self.npower:02d}', sym, at[0] - dx, at[1] - dy, angle,
+        p = Placed(self, f'#PWR{self.npower:03d}', sym, at[0] - dx, at[1] - dy, angle,
                    value=value, val_at=None)
         self.parts.append(p)
         return p
@@ -274,6 +286,11 @@ class Sheet:
     def glabel(self, text, at, side='L', shape='input'):
         """Off-page connector. side: where the label sits relative to its wire
         end ('L' = label to the left, wire leaves to the right)."""
+        text = self.netmap.get(text, text)
+        if text in getattr(self, 'power_labels', {}):
+            # System mode: a supply label becomes a real power symbol.
+            self.power(self.power_labels[text], at)
+            return
         ang, just = {'L': (180, 'right'), 'R': (0, 'left'), 'T': (90, 'left'),
                      'B': (270, 'right')}[side]
         self.items.append(
@@ -293,17 +310,38 @@ class Sheet:
                           f'(effects (font (size {size} {size}){b}) (justify {justify})) '
                           f'(uuid {q(U())}))')
 
+    def subsheet(self, name, filename, at, size, page):
+        """A hierarchical sheet block (root sheet only). Returns the child's
+        instance path, to pass to the child Sheet as inst_path."""
+        u = U()
+        x, y = g(at[0]), g(at[1])
+        w, h = g(size[0]), g(size[1])
+        self.items.append(
+            f'(sheet (at {x} {y}) (size {w} {h}) (exclude_from_sim no) (in_bom yes) '
+            f'(on_board yes) (dnp no) (fields_autoplaced yes) '
+            f'(stroke (width 0.1524) (type solid)) (fill (color 0 0 0 0.0000)) '
+            f'(uuid {q(u)})'
+            f' (property "Sheetname" {q(name)} (at {x} {g(y - 0.7)} 0) '
+            f'(effects (font (size 1.27 1.27)) (justify left bottom)))'
+            f' (property "Sheetfile" {q(filename)} (at {x} {g(y + h + 0.6)} 0) '
+            f'(effects (font (size 1.27 1.27)) (justify left top)))'
+            f' (instances (project {q(self.project)} (path {q("/" + self.uuid)} '
+            f'(page {q(str(page))})))))')
+        return f'/{self.uuid}/{u}'
+
     def save(self, path):
         lib = '\n'.join(s.lib(self.libname) for s in self.syms.values())
         tb = [f'(title {q(self.title)})', f'(date {q(self.date)})']
         for i, c in enumerate(self.comments, 1):
             tb.append(f'(comment {i} {q(c)})')
-        parts = '\n'.join(p.sexpr(self.libname, self.uuid, self.project) for p in self.parts)
+        ipath = self.inst_path or '/' + self.uuid
+        parts = '\n'.join(p.sexpr(self.libname, ipath, self.project) for p in self.parts)
+        si = '' if self.inst_path else '\n(sheet_instances (path "/" (page "1")))'
         body = (f'(kicad_sch (version 20231120) (generator "kgen") (generator_version "1.0")\n'
                 f'(uuid {q(self.uuid)})\n(paper {q(self.paper)})\n'
                 f'(title_block {" ".join(tb)})\n'
                 f'(lib_symbols\n{lib}\n)\n' + '\n'.join(self.items) + '\n' + parts +
-                f'\n(sheet_instances (path "/" (page "1")))\n)\n')
+                si + '\n)\n')
         open(path, 'w', encoding='utf-8', newline='\n').write(body)
         return path
 
