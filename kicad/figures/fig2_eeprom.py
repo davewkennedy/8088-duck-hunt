@@ -87,11 +87,26 @@ def build():
                val_at=P(737, 660))
     green = s.ic('D2', led, X(771), y7[1], value='GREEN', hide_ref=True,
                  val_at=P(722, 745))
-    s.wire(y1, red.pin('1'))
+    # Series resistors (added: David confirmed the board had them; the value
+    # wasn't recorded, so 220 ohm, as on Fig 4's LEDs). They sit on the
+    # cathode side, between the decoder output and the LED.
+    res = Stock('Device', 'R')
+
+    def series_r(ref, led_part, y):
+        k = led_part.pin('1')
+        # Value as level text: a rotated part turns its own value field.
+        r = s.ic(ref, res, k[0] - 5.08, y, angle=90, value='220', hide_ref=True,
+                 hide_value=True)
+        s.text('220', (k[0] - 6.35, y - 1.905))
+        a, b = sorted([r.pin('1'), r.pin('2')])
+        s.wire(b, k)
+        return a
+
+    s.wire(y1, series_r('R1', red, y1[1]))
     # Green LED on ~Y2 (corrected): across the ~CE vertical (no junction),
     # then down to the green LED where the printout drew it.
-    gx2 = X(700)
-    s.wire(y2, (gx2, y2[1]), (gx2, y7[1]), green.pin('1'))
+    gx2 = X(690)
+    s.wire(y2, (gx2, y2[1]), (gx2, y7[1]), series_r('R2', green, y7[1]))
     vcc_pin = u1.pin('32')
     s.wire(vcc_pin, (ax, vcc_pin[1]), (ax, Y(812)))
     s.wire(red.pin('2'), (ax, y1[1]))
@@ -101,7 +116,9 @@ def build():
 
     s.text('Corrected from the 2007 printout: ~{CE} on ~{Y7} only, green LED on '
            '~{Y2} only, RAM select on ~{Y0}\n(the printout tied ~{CE}, ~{Y2} and '
-           '~{Y7} together), per the addresses in skeet.asm; D5 label (printed as a second D4).', P(160, 865))
+           '~{Y7} together), per the addresses in skeet.asm; D5 label (printed as a second D4);\n'
+           'LED series resistors (on the board but not the printout; value not recorded, '
+           '220 ohm as on Fig 4).', P(160, 865))
     caption(s, 'Figure 2: Memory\nSubsystem - EEPROM', P(95, 915))
     return save(s, 'fig2-eeprom.kicad_sch')
 
